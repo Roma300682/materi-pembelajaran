@@ -185,27 +185,54 @@ export default function App() {
     };
   }, [activeMateri]);
 
+  const sendXhrPost = (
+    url: string,
+    payload: unknown
+  ): Promise<{ status: number; text: string }> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.withCredentials = true;
+      xhr.timeout = 45000;
+
+      xhr.onload = () => {
+        resolve({
+          status: xhr.status,
+          text: xhr.responseText || '',
+        });
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Gangguan koneksi jaringan ke server.'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Waktu tunggu koneksi habis. Silakan coba lagi.'));
+      };
+
+      xhr.send(JSON.stringify(payload));
+    });
+  };
+
   const postJsonApi = async <T,>(url: string, payload: unknown): Promise<T> => {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      const { status, text } = await sendXhrPost(url, payload);
+      const trimmed = text.trim();
 
-      const rawText = await response.text();
-      const trimmed = rawText.trim();
-
-      if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html') || trimmed.startsWith('<')) {
+      if (
+        trimmed.startsWith('<!doctype') ||
+        trimmed.startsWith('<!DOCTYPE') ||
+        trimmed.startsWith('<html') ||
+        trimmed.startsWith('<')
+      ) {
         if (attempt === 0) {
           await new Promise((r) => setTimeout(r, 1500));
           continue;
         }
         throw new Error(
-          'Server sedang memuat ulang atau sibuk. Silakan klik tombol sekali lagi.'
+          'Server sedang memuat ulang. Silakan klik tombol sekali lagi.'
         );
       }
 
@@ -213,17 +240,32 @@ export default function App() {
       try {
         parsed = JSON.parse(trimmed);
       } catch {
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 1200));
+          continue;
+        }
         throw new Error(
-          'Respons server tidak valid. Silakan coba beberapa saat lagi.'
+          'Respons server belum siap. Silakan klik tombol sekali lagi.'
         );
       }
 
-      if (!response.ok) {
-        const errMsg =
-          typeof parsed.error === 'string'
-            ? parsed.error
-            : 'Permintaan ke server gagal diproses.';
-        throw new Error(errMsg);
+      if (status < 200 || status >= 300) {
+        let extractedError = 'Permintaan ke server gagal diproses.';
+        if (typeof parsed.error === 'string' && parsed.error.trim()) {
+          extractedError = parsed.error;
+        } else if (
+          parsed.error &&
+          typeof parsed.error === 'object' &&
+          'message' in parsed.error &&
+          typeof (parsed.error as { message?: unknown }).message === 'string'
+        ) {
+          extractedError = String(
+            (parsed.error as { message: string }).message
+          );
+        } else if (typeof parsed.message === 'string' && parsed.message.trim()) {
+          extractedError = parsed.message;
+        }
+        throw new Error(extractedError);
       }
 
       return parsed as T;
@@ -245,7 +287,7 @@ export default function App() {
 
     try {
       const data = await postJsonApi<{ materi: StructuredMateri }>(
-        '/api/generate-materi',
+        '/api/penyusun-materi',
         {
           topic: trimmedTopic,
           educationLevel,
@@ -290,7 +332,7 @@ export default function App() {
 
     try {
       const data = await postJsonApi<{ materi: StructuredMateri }>(
-        '/api/simplify-materi',
+        '/api/ringkas-materi',
         {
           currentMateri: activeMateri,
         }
@@ -333,7 +375,7 @@ export default function App() {
 
     try {
       const data = await postJsonApi<{ additionalParagraph: string }>(
-        '/api/expand-section',
+        '/api/perdalam-materi',
         {
           topic: activeMateri.topicInput,
           educationLevel: activeMateri.educationLevel,

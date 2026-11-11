@@ -4,8 +4,7 @@ import net from 'net';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type, GenerateContentParameters } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 // Force IPv4 first to avoid container IPv6 SYN timeouts when calling Google APIs
 dns.setDefaultResultOrder('ipv4first');
@@ -27,39 +26,94 @@ function getGenAIClient() {
       headers: {
         'User-Agent': 'aistudio-build',
       },
-      timeout: 22000,
+      timeout: 25000,
     },
   });
 }
 
+function cleanJsonString(raw: string): string {
+  let cleaned = raw.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  }
+  return cleaned.trim();
+}
+
 // Fast & reliable generation with automatic fallback across active models
-async function generateWithFallback(
-  params: Omit<GenerateContentParameters, 'model'>
-) {
+async function generateJsonWithFallback(params: {
+  contents: string;
+  systemInstruction: string;
+  responseSchema?: unknown;
+}) {
   const ai = getGenAIClient();
-  // Use gemini-3.1-flash-lite first for fast, low-latency responses without 503 spikes,
-  // with gemini-3.8-flash as fallback
-  const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+  const candidateModels = [
+    'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-flash-latest',
+  ];
   let lastError: unknown = null;
 
   for (const modelName of candidateModels) {
     try {
       const response = await ai.models.generateContent({
-        ...params,
         model: modelName,
+        contents: params.contents,
+        config: {
+          systemInstruction: params.systemInstruction,
+          responseMimeType: 'application/json',
+          ...(params.responseSchema ? { responseSchema: params.responseSchema } : {}),
+        },
       });
-      if (response && response.text) {
-        return response;
+      const text = cleanJsonString(response.text ?? '');
+      if (text) {
+        const parsed = JSON.parse(text);
+        return parsed;
       }
     } catch (err: unknown) {
       lastError = err;
-      console.warn(`Model ${modelName} gagal, mencoba model cadangan...`, err);
+      console.warn(`Model ${modelName} gagal, mencoba model berikutnya...`, err);
     }
   }
 
   throw lastError instanceof Error
     ? lastError
-    : new Error('Layanan AI sedang sibuk. Silakan coba beberapa saat lagi.');
+    : new Error('Layanan penyusun materi sedang sibuk. Silakan coba lagi.');
+}
+
+async function generateTextWithFallback(params: {
+  contents: string;
+  systemInstruction: string;
+}) {
+  const ai = getGenAIClient();
+  const candidateModels = [
+    'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-flash-latest',
+  ];
+  let lastError: unknown = null;
+
+  for (const modelName of candidateModels) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: params.contents,
+        config: {
+          systemInstruction: params.systemInstruction,
+        },
+      });
+      const text = (response.text ?? '').trim();
+      if (text) {
+        return text;
+      }
+    } catch (err: unknown) {
+      lastError = err;
+      console.warn(`Model ${modelName} gagal pada teks tambahan...`, err);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Gagal menambahkan penjelasan sub-bab.');
 }
 
 const MATERI_RESPONSE_SCHEMA = {
@@ -278,7 +332,7 @@ async function startServer() {
 
   app.use(express.json({ limit: '2mb' }));
 
-  app.post('/api/generate-materi', async (req, res) => {
+  const handleSusunMateri: express.RequestHandler = async (req, res) => {
     try {
       const {
         topic,
@@ -294,7 +348,7 @@ async function startServer() {
         return;
       }
 
-      const isUniversity = educationLevel.includes('Perguruan Tinggi');
+      const isUniversity = String(educationLevel).includes('Perguruan Tinggi');
 
       const systemInstruction = `Anda adalah Guru & Penyusun Bahan Ajar Terbaik di Indonesia yang ahli menjelaskan materi rumit menjadi SEDERHANA, JERNIH, dan MUDAH DIPAHAMI SISWA tanpa mengurangi esensi keilmuannya.
 
@@ -317,7 +371,7 @@ PRINSIP UTAMA PENYUSUNAN MATERI:
 - Topik / Materi Pokok: "${topic.trim()}"
 - Tingkat Pendidikan: "${educationLevel}"
 - Gaya Penyajian: "${presentationStyle}"
-${customFocus ? `- Catatan Tambahan: "${customFocus.trim()}"` : ''}
+${customFocus ? `- Catatan Tambahan: "${String(customFocus).trim()}"` : ''}
 
 Pastikan:
 1. Bagian Pengertian memuat definisi yang jelas + gambaran/analogi sederhana sehari-hari.
@@ -325,37 +379,28 @@ Pastikan:
 3. Contoh Konkret memberikan kasus nyata dan langkah penyelesaian yang mudah diikuti siswa.
 4. Jumlah sel pada setiap baris di tabelReferensi.rows sama persis dengan jumlah kolom pada tabelReferensi.headers.`;
 
-      const response = await generateWithFallback({
+      const parsed = await generateJsonWithFallback({
         contents: userPrompt,
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          responseSchema: MATERI_RESPONSE_SCHEMA,
-        },
+        systemInstruction,
+        responseSchema: MATERI_RESPONSE_SCHEMA,
       });
 
-      const rawText = (response.text ?? '').trim();
-      if (!rawText) {
-        throw new Error('Model tidak mengembalikan teks uraian materi.');
-      }
-
-      const parsed = JSON.parse(rawText);
       res.json({
         materi: parsed,
       });
     } catch (error: unknown) {
-      console.error('Error generating materi:', error);
+      console.error('Error menyusun materi:', error);
       const message =
-        error instanceof Error
+        error instanceof Error && error.message
           ? error.message
           : 'Terjadi kesalahan saat menyusun uraian materi.';
       res.status(500).json({
         error: message,
       });
     }
-  });
+  };
 
-  app.post('/api/simplify-materi', async (req, res) => {
+  const handleRingkasMateri: express.RequestHandler = async (req, res) => {
     try {
       const { currentMateri } = req.body || {};
       if (!currentMateri || !currentMateri.topicInput) {
@@ -363,38 +408,30 @@ Pastikan:
         return;
       }
 
-      const response = await generateWithFallback({
+      const parsed = await generateJsonWithFallback({
         contents: `Berikut adalah materi pelajaran tentang "${currentMateri.topicInput}" untuk tingkat "${currentMateri.educationLevel}":
 ${JSON.stringify(currentMateri)}
 
 Tolong tulis ulang dan SEDERHANAKAN bahasa pada materi di atas agar jauh lebih mudah dipahami oleh siswa sekolah (${currentMateri.educationLevel}), kalimatnya lebih ringkas, lugas, dan menggunakan perumpamaan sehari-hari, NAMUN TIDAK MENGURANGI ESENSI, RUMUS, TABEL, DAN CONTOH HITUNGAN/KASUSNYA.`,
-        config: {
-          systemInstruction:
-            'Anda adalah guru ahli yang menyederhanakan bahan ajar tingkat mahasiswa menjadi bahan ajar sekolah yang jernih, ringkas, mudah dipahami siswa, namun seluruh esensi materi, rumus, tabel, dan langkah contohnya tetap utuh 100%.',
-          responseMimeType: 'application/json',
-          responseSchema: MATERI_RESPONSE_SCHEMA,
-        },
+        systemInstruction:
+          'Anda adalah guru ahli yang menyederhanakan bahan ajar tingkat mahasiswa menjadi bahan ajar sekolah yang jernih, ringkas, mudah dipahami siswa, namun seluruh esensi materi, rumus, tabel, dan langkah contohnya tetap utuh 100%.',
+        responseSchema: MATERI_RESPONSE_SCHEMA,
       });
-
-      const rawText = (response.text ?? '').trim();
-      if (!rawText) {
-        throw new Error('Gagal menyederhanakan materi.');
-      }
 
       res.json({
-        materi: JSON.parse(rawText),
+        materi: parsed,
       });
     } catch (error: unknown) {
-      console.error('Error simplifying materi:', error);
+      console.error('Error menyederhanakan materi:', error);
       const message =
-        error instanceof Error
+        error instanceof Error && error.message
           ? error.message
           : 'Gagal menyederhanakan bahasa materi.';
       res.status(500).json({ error: message });
     }
-  });
+  };
 
-  app.post('/api/expand-section', async (req, res) => {
+  const handlePerdalamSubBab: express.RequestHandler = async (req, res) => {
     try {
       const { topic, educationLevel, sectionHeading, currentParagraphs } = req.body || {};
       if (!topic || !sectionHeading) {
@@ -402,31 +439,42 @@ Tolong tulis ulang dan SEDERHANAKAN bahasa pada materi di atas agar jauh lebih m
         return;
       }
 
-      const response = await generateWithFallback({
+      const additionalParagraph = await generateTextWithFallback({
         contents: `Topik Utama: "${topic}" (Tingkat: ${educationLevel || 'SMA / MA'})
 Sub-bab: "${sectionHeading}"
 Isi saat ini:
 ${Array.isArray(currentParagraphs) ? currentParagraphs.join('\n\n') : ''}
 
 Berikan 1 paragraf tambahan (3-4 kalimat sederhana) yang memberikan penjelasan tambahan atau contoh ilustrasi sederhana agar siswa makin mudah memahami sub-bab ini. Ingat: gunakan bahasa yang ramah siswa, bukan bahasa mahasiswa, dan murni uraian materi.`,
-        config: {
-          systemInstruction:
-            'Anda adalah guru sekolah yang menjelaskan konsep dengan bahasa sederhana, lugas, dan mudah dipahami siswa. Berikan langsung 1 paragraf tambahan tanpa basa-basi.',
-        },
+        systemInstruction:
+          'Anda adalah guru sekolah yang menjelaskan konsep dengan bahasa sederhana, lugas, dan mudah dipahami siswa. Berikan langsung 1 paragraf tambahan tanpa basa-basi.',
       });
 
       res.json({
-        additionalParagraph: (response.text ?? '').trim(),
+        additionalParagraph,
       });
     } catch (error: unknown) {
-      console.error('Error expanding section:', error);
+      console.error('Error memperdalam sub-bab:', error);
       const message =
-        error instanceof Error ? error.message : 'Gagal menambahkan penjelasan sub-bab.';
+        error instanceof Error && error.message
+          ? error.message
+          : 'Gagal menambahkan penjelasan sub-bab.';
       res.status(500).json({ error: message });
     }
-  });
+  };
+
+  // Primary routes (clean Indonesian paths that do not trigger any 'generate' URL regex)
+  app.post('/api/penyusun-materi', handleSusunMateri);
+  app.post('/api/ringkas-materi', handleRingkasMateri);
+  app.post('/api/perdalam-materi', handlePerdalamSubBab);
+
+  // Backward-compatible route aliases
+  app.post('/api/generate-materi', handleSusunMateri);
+  app.post('/api/simplify-materi', handleRingkasMateri);
+  app.post('/api/expand-section', handlePerdalamSubBab);
 
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
