@@ -1,0 +1,6 @@
+{
+  "name": "PustakaAjar — Penyusun Uraian Materi & Ekspor Word",
+  "description": "Aplikasi penyusun uraian materi pelajaran murni yang mendalam, terstruktur, dan otomatis menghasilkan dokumen Microsoft Word (.docx) siap cetak berstandar A4.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
