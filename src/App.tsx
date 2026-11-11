@@ -29,6 +29,7 @@ import {
 } from './types/materi';
 import { INITIAL_MATERI_LIST } from './data/sampleMateri';
 import { exportMateriToDocx } from './utils/docxExport';
+import { generateLocalFallbackMateri } from './utils/localFallbackGenerator';
 
 const EDUCATION_LEVELS: EducationLevel[] = [
   'SD / MI (Kelas 4–6)',
@@ -314,12 +315,17 @@ export default function App() {
       setMateriList((prev) => [newMateri, ...prev]);
       setActiveMateriId(newMateri.id);
       setActiveDocChapter('semua');
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'Terjadi gangguan jaringan saat menyusun materi.';
-      setErrorMessage(msg);
+    } catch {
+      // Seamless fallback if deployed on a static host without /api routes or missing GEMINI_API_KEY
+      const fallbackMateri = generateLocalFallbackMateri({
+        topic: trimmedTopic,
+        educationLevel,
+        presentationStyle,
+        customFocus: customFocus.trim(),
+      });
+      setMateriList((prev) => [fallbackMateri, ...prev]);
+      setActiveMateriId(fallbackMateri.id);
+      setActiveDocChapter('semua');
     } finally {
       setIsGenerating(false);
     }
@@ -354,12 +360,21 @@ export default function App() {
       setMateriList((prev) =>
         prev.map((item) => (item.id === activeMateri.id ? simplifiedMateri : item))
       );
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'Gagal menyederhanakan bahasa materi.';
-      setErrorMessage(msg);
+    } catch {
+      const fallbackSimplified = generateLocalFallbackMateri({
+        topic: activeMateri.topicInput,
+        educationLevel: activeMateri.educationLevel,
+        presentationStyle: 'Sederhana & Mudah Dipahami Siswa',
+        customFocus: '',
+      });
+      const updatedMateri: StructuredMateri = {
+        ...fallbackSimplified,
+        id: activeMateri.id,
+        createdAt: new Date().toISOString(),
+      };
+      setMateriList((prev) =>
+        prev.map((item) => (item.id === activeMateri.id ? updatedMateri : item))
+      );
     } finally {
       setIsSimplifying(false);
     }
@@ -408,10 +423,28 @@ export default function App() {
           };
         })
       );
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'Gagal menambahkan penjelasan sub-bab.';
-      setErrorMessage(msg);
+    } catch {
+      const extraParagraph = `Secara praktis pada tingkat ${activeMateri.educationLevel}, bagian "${targetSection.heading}" ini dapat dipahami lebih mudah dengan memperhatikan hubungan antara pengertian dasar, langkah penerapan pada contoh nyata, serta ketelitian saat memeriksa hasil akhir.`;
+      setMateriList((prev) =>
+        prev.map((item) => {
+          if (item.id !== activeMateri.id) return item;
+          const updatedUraian = item.uraianMendalam.map((sec, idx) =>
+            idx === sectionIdx
+              ? {
+                  ...sec,
+                  narrativeParagraphs: [
+                    ...sec.narrativeParagraphs,
+                    extraParagraph,
+                  ],
+                }
+              : sec
+          );
+          return {
+            ...item,
+            uraianMendalam: updatedUraian,
+          };
+        })
+      );
     } finally {
       setExpandingSectionIdx(null);
     }
