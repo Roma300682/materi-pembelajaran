@@ -7,6 +7,7 @@ export type EducationLevel =
 
 export type PresentationStyle =
   | 'Sederhana & Mudah Dipahami Siswa'
+  | 'Terstruktur, Mendalam & Sangat Lengkap'
   | 'Ringkas & Fokus Poin Inti'
   | 'Langkah demi Langkah (Hitungan / Proses)'
   | 'Standar Lengkap';

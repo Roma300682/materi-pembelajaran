@@ -366,6 +366,50 @@ export function generateLocalFallbackMateri(params: {
 }): StructuredMateri {
   const cleanTopic = params.topic.trim();
   const lower = cleanTopic.toLowerCase();
+  const isDeepComprehensive =
+    params.presentationStyle === 'Terstruktur, Mendalam & Sangat Lengkap';
+
+  const enrichForDeepStyle = (base: StructuredMateri): StructuredMateri => {
+    if (!isDeepComprehensive) return base;
+    return {
+      ...base,
+      estimatedReadingMinutes: Math.max(base.estimatedReadingMinutes + 4, 10),
+      poinKunci: [
+        ...base.poinKunci,
+        {
+          subTitle: `${base.poinKunci.length + 1}. Landasan Teoritis & Keterkaitan Antar-Komponen`,
+          explanation: `Pembahasan mendalam ${cleanTopic} menuntut pemahaman menyeluruh mengenai bagaimana setiap unsur saling memengaruhi secara sistematis dari kondisi awal hingga hasil akhir.`,
+          keyTakeaway: `Pahami hubungan sebab-akibat antar-komponen secara utuh, bukan terpisah-pisah.`,
+        },
+        {
+          subTitle: `${base.poinKunci.length + 2}. Evaluasi Kritis & Standar Ketepatan Penerapan`,
+          explanation: `Dalam penerapan tingkat lanjut pada jenjang ${params.educationLevel}, setiap hasil analisis atau perhitungan wajib diverifikasi kembali terhadap kaidah dasar ${cleanTopic}.`,
+          keyTakeaway: `Selalu lakukan pemeriksaan silang (cross-check) antara data awal, proses, dan kesimpulan.`,
+        },
+      ],
+      uraianMendalam: [
+        ...base.uraianMendalam,
+        {
+          heading: `C. Analisis Mendalam, Klasifikasi Lengkap & Kasus Khusus pada ${cleanTopic}`,
+          narrativeParagraphs: [
+            `Pada kajian yang terstruktur dan mendalam, ${cleanTopic} tidak hanya dilihat dari definisi permukaannya saja, melainkan juga dari struktur klasifikasi serta kondisi-kondisi khusus yang memengaruhi cara kerjanya. Setiap perubahan variabel atau data pada tahap awal akan memberikan dampak langsung terhadap hasil akhir.`,
+            `Oleh karena itu, pembelajar pada tingkat ${params.educationLevel} perlu menguasai pemetaan konsep secara menyeluruh${params.customFocus ? ` dengan perhatian khusus pada: ${params.customFocus}` : ''}. Pemetaan ini memastikan tidak ada tahapan analisis yang terlewat ketika menghadapi variasi kasus yang lebih kompleks.`,
+          ],
+          structuredStepsOrBullets: [
+            `Klasifikasi Sistematis: Mengelompokkan elemen-elemen ${cleanTopic} berdasarkan fungsi, sifat, dan urutannya.`,
+            `Analisis Variabel Penentu: Mengidentifikasi faktor utama yang menyebabkan perubahan hasil pada ${cleanTopic}.`,
+            `Penanganan Kasus Kompleks: Menerapkan prosedur bertahap ketika terdapat lebih dari satu kondisi yang berjalan bersamaan.`,
+            `Verifikasi & Validasi Akhir: Menguji kesesuaian hasil akhir dengan prinsip fundamental dan tabel referensi.`,
+          ],
+          formulaOrRuleBox: `Prinsip Kelengkapan Analisis: Identifikasi Menyeluruh → Klasifikasi Komponen → Penerapan Kaidah Sistematis → Verifikasi Hasil`,
+        },
+      ],
+      rangkuman: [
+        ...base.rangkuman,
+        `Kajian terstruktur dan mendalam atas ${cleanTopic} menghubungkan landasan konsep, mekanisme teknis, tabel klasifikasi, serta pembuktian melalui studi kasus nyata secara utuh.`,
+      ],
+    };
+  };
 
   // Check if matches initial sample list
   const matchingInitial = INITIAL_MATERI_LIST.find(
@@ -374,32 +418,32 @@ export function generateLocalFallbackMateri(params: {
       m.topicInput.toLowerCase().includes(lower)
   );
   if (matchingInitial) {
-    return {
+    return enrichForDeepStyle({
       ...matchingInitial,
       id: `materi-${Date.now()}`,
       topicInput: cleanTopic,
       educationLevel: params.educationLevel,
       presentationStyle: params.presentationStyle,
       createdAt: new Date().toISOString(),
-    };
+    });
   }
 
   // Check extra curated templates
   for (const [key, template] of Object.entries(EXTRA_CURATED_MATERI)) {
     if (lower.includes(key)) {
-      return {
+      return enrichForDeepStyle({
         ...template,
         id: `materi-${Date.now()}`,
         topicInput: cleanTopic,
         educationLevel: params.educationLevel,
         presentationStyle: params.presentationStyle,
         createdAt: new Date().toISOString(),
-      };
+      });
     }
   }
 
   // Dynamic structured student-friendly generator for any custom topic
-  return {
+  const dynamicBase: StructuredMateri = {
     id: `materi-${Date.now()}`,
     topicInput: cleanTopic,
     educationLevel: params.educationLevel,
@@ -553,4 +597,6 @@ export function generateLocalFallbackMateri(params: {
       `Melalui contoh konkret dan latihan bertahap, penguasaan materi ${cleanTopic} menjadi lebih kuat dan tidak mudah terlupa.`,
     ],
   };
+
+  return enrichForDeepStyle(dynamicBase);
 }

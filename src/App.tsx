@@ -41,6 +41,7 @@ const EDUCATION_LEVELS: EducationLevel[] = [
 
 const PRESENTATION_STYLES: PresentationStyle[] = [
   'Sederhana & Mudah Dipahami Siswa',
+  'Terstruktur, Mendalam & Sangat Lengkap',
   'Ringkas & Fokus Poin Inti',
   'Langkah demi Langkah (Hitungan / Proses)',
   'Standar Lengkap',
@@ -806,6 +807,15 @@ export default function App() {
                     </option>
                   ))}
                 </select>
+                <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
+                  {presentationStyle === 'Terstruktur, Mendalam & Sangat Lengkap'
+                    ? 'Menyusun pembahasan menyeluruh: 5–6 poin kunci, 3–4 sub-bab mendalam multi-paragraf, tabel klasifikasi lengkap, studi kasus bertahap, glosarium, dan rangkuman utuh.'
+                    : presentationStyle === 'Sederhana & Mudah Dipahami Siswa'
+                      ? 'Menggunakan kalimat lugas, jernih, dan perumpamaan sehari-hari tanpa mengurangi esensi materi.'
+                      : presentationStyle === 'Langkah demi Langkah (Hitungan / Proses)'
+                        ? 'Menekankan urutan tahapan kerja, rumus, dan langkah penyelesaian kasus secara runtut.'
+                        : 'Menyajikan uraian materi secara proporsional, jelas, dan fokus pada konsep pokok.'}
+                </p>
               </div>
 
               {/* Optional Sub-Topic Focus */}
@@ -842,7 +852,11 @@ export default function App() {
                 {isGenerating ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Menyusun Materi Sederhana...</span>
+                    <span>
+                      {presentationStyle === 'Terstruktur, Mendalam & Sangat Lengkap'
+                        ? 'Menyusun Materi Mendalam & Lengkap...'
+                        : 'Menyusun Uraian Materi...'}
+                    </span>
                   </>
                 ) : (
                   <>

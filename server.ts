@@ -349,8 +349,23 @@ async function startServer() {
       }
 
       const isUniversity = String(educationLevel).includes('Perguruan Tinggi');
+      const isDeepComprehensive =
+        String(presentationStyle).includes('Mendalam') ||
+        String(presentationStyle).includes('Sangat Lengkap');
 
-      const systemInstruction = `Anda adalah Guru & Penyusun Bahan Ajar Terbaik di Indonesia yang ahli menjelaskan materi rumit menjadi SEDERHANA, JERNIH, dan MUDAH DIPAHAMI SISWA tanpa mengurangi esensi keilmuannya.
+      const systemInstruction = isDeepComprehensive
+        ? `Anda adalah Pakar Kurikulum & Penulis Buku Teks Utama di Indonesia yang menyusun URAIAN MATERI TERSTRUKTUR, MENDALAM, DAN SANGAT LENGKAP untuk tingkat ${educationLevel}.
+
+PRINSIP UTAMA PENYUSUNAN MATERI MENDALAM & SANGAT LENGKAP:
+1. KEDALAMAN & KELENGKAPAN MAKSIMAL:
+   - Bahas topik secara tuntas dari akar konsep, landasan teori/prinsip dasar, mekanisme/aturan teknis secara mendetail, klasifikasi lengkap, hingga penerapan kasus nyata dari yang dasar sampai kompleks.
+   - Susun minimal 5-6 Poin Kunci komprehensif, 3-4 Sub-Bab Uraian Mendalam (masing-masing 2-3 paragraf padat dan 4-5 rincian tahapan/kaidah), Tabel Referensi yang sangat lengkap (5-7 baris), 2-3 Contoh Konkret dengan langkah analisis sangat rinci, 3 Kesalahan Umum, 5-6 Istilah Glosarium, dan 5-6 butir Rangkuman menyeluruh.
+2. BAHASA TERSTRUKTUR & JERNIH SESUAI JENJANG (${educationLevel}):
+   - Gunakan bahasa Indonesia yang sistematis, runtut, jelas, dan mudah diikuti pembelajar tingkat ${educationLevel}, lengkap dengan penjelasan istilah teknis dan rumus/aturan intinya.
+3. FOKUS MURNI URAIAN MATERI (BUKAN MODUL AJAR / RPP):
+   - DILARANG KERAS menyertakan Identitas Modul, Nama Penyusun, Alokasi Waktu, Profil Pelajar Pancasila, Capaian Pembelajaran (CP), Tujuan Pembelajaran (TP), Pertanyaan Pemantik, Langkah Kegiatan Guru, ataupun Soal Evaluasi/Kuis.
+   - Hasilkan 100% murni teks uraian materi pelajaran yang sangat lengkap dan siap cetak.`
+        : `Anda adalah Guru & Penyusun Bahan Ajar Terbaik di Indonesia yang ahli menjelaskan materi rumit menjadi SEDERHANA, JERNIH, dan MUDAH DIPAHAMI SISWA tanpa mengurangi esensi keilmuannya.
 
 PRINSIP UTAMA PENYUSUNAN MATERI:
 1. BAHASA SEDERHANA & TIDAK SEPERTI DIKTAT MAHASISWA:
@@ -367,7 +382,21 @@ PRINSIP UTAMA PENYUSUNAN MATERI:
    - DILARANG KERAS menyertakan Identitas Modul, Nama Penyusun, Alokasi Waktu, Profil Pelajar Pancasila, Capaian Pembelajaran (CP), Tujuan Pembelajaran (TP), Pertanyaan Pemantik, Langkah Kegiatan Guru, ataupun Soal Evaluasi/Kuis.
    - Hasilkan 100% murni teks uraian materi pelajaran (Pengantar, Pengertian & Analogi Sederhana, Poin Kunci, Penjelasan Inti, Tabel Ringkas, Contoh Konkret, Catatan Kekeliruan Umum, Kata Kunci, dan Rangkuman).`;
 
-      const userPrompt = `Susun uraian materi pelajaran dengan bahasa yang sederhana, lugas, dan mudah dipahami siswa tanpa mengurangi esensi materi untuk topik berikut:
+      const userPrompt = isDeepComprehensive
+        ? `Susun uraian materi pelajaran yang TERSTRUKTUR, MENDALAM, DAN SANGAT LENGKAP untuk topik berikut:
+- Topik / Materi Pokok: "${topic.trim()}"
+- Tingkat Pendidikan: "${educationLevel}"
+- Gaya Penyajian: "${presentationStyle}"
+${customFocus ? `- Catatan Fokus Tambahan: "${String(customFocus).trim()}"` : ''}
+
+Pastikan kelengkapan struktur berikut terpenuhi secara menyeluruh:
+1. Pengantar & Pengertian: Definisi komprehensif, pembedahan istilah/konsep secara menyeluruh, analogi/konteks nyata, serta esensi fundamental.
+2. Poin Kunci (5-6 poin): Uraikan seluruh pilar konsep terpenting secara sistematis.
+3. Uraian Mendalam (3-4 sub-bab lengkap: A, B, C, D): Masing-masing sub-bab memuat 2-3 paragraf penjelasan mendalam, 4-5 poin tahapan/aturan rinci, serta kotak rumus/kaidah inti.
+4. Tabel Referensi Lengkap (5-7 baris): Klasifikasi, perbandingan, atau aturan lengkap yang merangkum keseluruhan aspek materi. Jumlah sel pada setiap baris di tabelReferensi.rows wajib sama persis dengan jumlah kolom pada tabelReferensi.headers.
+5. Contoh Konkret (2-3 studi kasus): Skenario lengkap beserta langkah penyelesaian sistematis dari awal hingga kesimpulan akhir.
+6. Kesalahan Umum (3 item), Glosarium (5-6 istilah), dan Rangkuman Lengkap (5-6 poin).`
+        : `Susun uraian materi pelajaran dengan bahasa yang sederhana, lugas, dan mudah dipahami siswa tanpa mengurangi esensi materi untuk topik berikut:
 - Topik / Materi Pokok: "${topic.trim()}"
 - Tingkat Pendidikan: "${educationLevel}"
 - Gaya Penyajian: "${presentationStyle}"
