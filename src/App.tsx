@@ -20,6 +20,7 @@ import {
   ChevronRight,
   FolderOpen,
   Feather,
+  Pencil,
 } from 'lucide-react';
 import {
   DocxFormatConfig,
@@ -30,6 +31,7 @@ import {
 import { INITIAL_MATERI_LIST } from './data/sampleMateri';
 import { exportMateriToDocx } from './utils/docxExport';
 import { generateLocalFallbackMateri } from './utils/localFallbackGenerator';
+import { DocumentEditor } from './components/DocumentEditor';
 
 const EDUCATION_LEVELS: EducationLevel[] = [
   'SD / MI (Kelas 4–6)',
@@ -125,6 +127,9 @@ export default function App() {
   const [copiedPlainText, setCopiedPlainText] = useState<boolean>(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<'penyusun' | 'format' | 'riwayat'>('penyusun');
   const [activeDocChapter, setActiveDocChapter] = useState<string>('semua');
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [draftMateri, setDraftMateri] = useState<StructuredMateri | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<boolean>(false);
 
   // Word (.docx) & A4 Print Formatting State
   const [docxConfig, setDocxConfig] = useState<DocxFormatConfig>({
@@ -153,27 +158,31 @@ export default function App() {
     );
   }, [materiList, activeMateriId]);
 
+  const displayedMateri = useMemo(() => {
+    return isEditing && draftMateri ? draftMateri : activeMateri;
+  }, [isEditing, draftMateri, activeMateri]);
+
   const documentMetrics = useMemo(() => {
-    if (!activeMateri) return { wordCount: 0, sectionCount: 6, exampleCount: 0 };
+    if (!displayedMateri) return { wordCount: 0, sectionCount: 6, exampleCount: 0 };
     const allTextParts: string[] = [
-      activeMateri.title,
-      activeMateri.pengantar.hookParagraph,
-      activeMateri.pengantar.scopeParagraph,
-      activeMateri.pengertian.mainDefinition,
-      activeMateri.pengertian.terminologyBreakdown,
-      activeMateri.pengertian.fundamentalEssence,
-      ...activeMateri.poinKunci.map((p) => `${p.subTitle} ${p.explanation} ${p.keyTakeaway || ''}`),
-      ...activeMateri.uraianMendalam.map(
+      displayedMateri.title,
+      displayedMateri.pengantar.hookParagraph,
+      displayedMateri.pengantar.scopeParagraph,
+      displayedMateri.pengertian.mainDefinition,
+      displayedMateri.pengertian.terminologyBreakdown,
+      displayedMateri.pengertian.fundamentalEssence,
+      ...displayedMateri.poinKunci.map((p) => `${p.subTitle} ${p.explanation} ${p.keyTakeaway || ''}`),
+      ...displayedMateri.uraianMendalam.map(
         (u) =>
           `${u.heading} ${u.narrativeParagraphs.join(' ')} ${(u.structuredStepsOrBullets || []).join(' ')} ${u.formulaOrRuleBox || ''}`
       ),
-      ...activeMateri.contohKonkret.map(
+      ...displayedMateri.contohKonkret.map(
         (c) =>
           `${c.title} ${c.contextScenario} ${c.stepByStepAnalysis.join(' ')} ${c.conclusionResult}`
       ),
-      ...activeMateri.kesalahanUmum.map((k) => `${k.misconception} ${k.correction}`),
-      ...activeMateri.glosarium.map((g) => `${g.term} ${g.definition}`),
-      ...activeMateri.rangkuman,
+      ...displayedMateri.kesalahanUmum.map((k) => `${k.misconception} ${k.correction}`),
+      ...displayedMateri.glosarium.map((g) => `${g.term} ${g.definition}`),
+      ...displayedMateri.rangkuman,
     ];
     const words = allTextParts
       .join(' ')
@@ -183,9 +192,9 @@ export default function App() {
     return {
       wordCount: words,
       sectionCount: 6,
-      exampleCount: activeMateri.contohKonkret.length,
+      exampleCount: displayedMateri.contohKonkret.length,
     };
-  }, [activeMateri]);
+  }, [displayedMateri]);
 
   const sendXhrPost = (
     url: string,
@@ -316,6 +325,8 @@ export default function App() {
       setMateriList((prev) => [newMateri, ...prev]);
       setActiveMateriId(newMateri.id);
       setActiveDocChapter('semua');
+      setIsEditing(false);
+      setDraftMateri(null);
     } catch {
       // Seamless fallback if deployed on a static host without /api routes or missing GEMINI_API_KEY
       const fallbackMateri = generateLocalFallbackMateri({
@@ -327,6 +338,8 @@ export default function App() {
       setMateriList((prev) => [fallbackMateri, ...prev]);
       setActiveMateriId(fallbackMateri.id);
       setActiveDocChapter('semua');
+      setIsEditing(false);
+      setDraftMateri(null);
     } finally {
       setIsGenerating(false);
     }
@@ -451,11 +464,53 @@ export default function App() {
     }
   };
 
+  const cloneMateri = (source: StructuredMateri): StructuredMateri =>
+    JSON.parse(JSON.stringify(source)) as StructuredMateri;
+
+  const handleStartEdit = () => {
+    if (!activeMateri) return;
+    setDraftMateri(cloneMateri(activeMateri));
+    setIsEditing(true);
+    setErrorMessage(null);
+  };
+
+  const commitDraftChanges = (): StructuredMateri | null => {
+    if (!draftMateri) return activeMateri || null;
+    const savedMateri: StructuredMateri = {
+      ...draftMateri,
+      createdAt: new Date().toISOString(),
+    };
+    setMateriList((prev) =>
+      prev.map((item) => (item.id === savedMateri.id ? savedMateri : item))
+    );
+    setIsEditing(false);
+    setDraftMateri(null);
+    setSaveFeedback(true);
+    setTimeout(() => setSaveFeedback(false), 2500);
+    return savedMateri;
+  };
+
+  const handleSaveEdit = () => {
+    commitDraftChanges();
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setDraftMateri(null);
+  };
+
+  const handleResetDraft = () => {
+    if (!activeMateri) return;
+    setDraftMateri(cloneMateri(activeMateri));
+  };
+
   const handleDownloadWord = async () => {
     if (!activeMateri || isExportingDocx) return;
     setIsExportingDocx(true);
     try {
-      await exportMateriToDocx(activeMateri, docxConfig);
+      const targetMateri =
+        isEditing && draftMateri ? commitDraftChanges() || draftMateri : activeMateri;
+      await exportMateriToDocx(targetMateri, docxConfig);
     } catch (err: unknown) {
       console.error('Export docx error:', err);
       setErrorMessage('Gagal mengekspor dokumen Word (.docx).');
@@ -465,28 +520,29 @@ export default function App() {
   };
 
   const handleCopyPlainText = async () => {
-    if (!activeMateri) return;
+    const sourceMateri = displayedMateri;
+    if (!sourceMateri) return;
     const lines: string[] = [
-      `${activeMateri.title.toUpperCase()}`,
-      `Mata Pelajaran: ${activeMateri.subjectArea} | Tingkat: ${activeMateri.educationLevel}`,
+      `${sourceMateri.title.toUpperCase()}`,
+      `Mata Pelajaran: ${sourceMateri.subjectArea} | Tingkat: ${sourceMateri.educationLevel}`,
       '',
-      activeMateri.pengantar.hookParagraph,
-      activeMateri.pengantar.scopeParagraph,
+      sourceMateri.pengantar.hookParagraph,
+      sourceMateri.pengantar.scopeParagraph,
       '',
       '1. PENGERTIAN',
-      `Pengertian: ${activeMateri.pengertian.mainDefinition}`,
-      `Gambaran Sederhana: ${activeMateri.pengertian.terminologyBreakdown}`,
-      `Inti Konsep: ${activeMateri.pengertian.fundamentalEssence}`,
+      `Pengertian: ${sourceMateri.pengertian.mainDefinition}`,
+      `Gambaran Sederhana: ${sourceMateri.pengertian.terminologyBreakdown}`,
+      `Inti Konsep: ${sourceMateri.pengertian.fundamentalEssence}`,
       '',
       '2. POIN-POIN KUNCI',
-      ...activeMateri.poinKunci.flatMap((p) => [
+      ...sourceMateri.poinKunci.flatMap((p) => [
         `${p.subTitle}`,
         p.explanation,
         p.keyTakeaway ? `Kata Kunci: ${p.keyTakeaway}` : '',
         '',
       ]),
       '3. PENJELASAN INTI MATERI',
-      ...activeMateri.uraianMendalam.flatMap((u) => [
+      ...sourceMateri.uraianMendalam.flatMap((u) => [
         u.heading,
         ...u.narrativeParagraphs,
         ...(u.structuredStepsOrBullets || []).map((b) => `• ${b}`),
@@ -494,7 +550,7 @@ export default function App() {
         '',
       ]),
       '4. CONTOH KONKRET DAN CARA PENYELESAIAN',
-      ...activeMateri.contohKonkret.flatMap((c, i) => [
+      ...sourceMateri.contohKonkret.flatMap((c, i) => [
         `${i + 1}. ${c.title}`,
         `Contoh Kasus: ${c.contextScenario}`,
         ...c.stepByStepAnalysis.map((s) => `- ${s}`),
@@ -502,13 +558,13 @@ export default function App() {
         '',
       ]),
       '5. CATATAN PENTING & ISTILAH POKOK',
-      ...activeMateri.kesalahanUmum.flatMap((k, i) => [
+      ...sourceMateri.kesalahanUmum.flatMap((k, i) => [
         `Hal yang Sering Keliru ${i + 1}: ${k.misconception}`,
         `Yang Benar: ${k.correction}`,
       ]),
       '',
       '6. RANGKUMAN MATERI',
-      ...activeMateri.rangkuman.map((r, i) => `${i + 1}. ${r}`),
+      ...sourceMateri.rangkuman.map((r, i) => `${i + 1}. ${r}`),
     ];
 
     try {
@@ -1137,7 +1193,11 @@ export default function App() {
                     >
                       <button
                         type="button"
-                        onClick={() => setActiveMateriId(item.id)}
+                        onClick={() => {
+                          setActiveMateriId(item.id);
+                          setIsEditing(false);
+                          setDraftMateri(null);
+                        }}
                         className="flex-1 text-left cursor-pointer"
                       >
                         <div className="text-sm font-semibold text-slate-900 leading-snug">
@@ -1199,10 +1259,45 @@ export default function App() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {saveFeedback && !isEditing && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 mr-1">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Tersimpan</span>
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={isEditing ? handleSaveEdit : handleStartEdit}
+                disabled={isSimplifying || isGenerating}
+                title={
+                  isEditing
+                    ? 'Simpan hasil edit dan kembali ke pratinjau cetak'
+                    : 'Edit teks, poin, contoh, atau tabel dokumen sebelum diunduh ke Word'
+                }
+                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50 ${
+                  isEditing
+                    ? 'text-white bg-slate-900 hover:bg-slate-800 border-slate-900'
+                    : 'text-slate-800 bg-white hover:bg-slate-50 border-slate-300'
+                }`}
+              >
+                {isEditing ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Selesai &amp; Simpan</span>
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit Dokumen</span>
+                  </>
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={handleSimplifyCurrentMateri}
-                disabled={isSimplifying || isGenerating}
+                disabled={isSimplifying || isGenerating || isEditing}
                 title="Buat kalimat lebih ringkas dan mudah dipahami siswa tanpa mengurangi inti materi"
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
               >
@@ -1240,7 +1335,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                disabled={isEditing}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Cetak / PDF</span>
@@ -1304,7 +1400,22 @@ export default function App() {
             </div>
           )}
 
-          {/* A4 Paper Sheet Representation */}
+          {/* Editable Mode vs A4 Paper Sheet Preview */}
+          {isEditing && draftMateri ? (
+            <DocumentEditor
+              draft={draftMateri}
+              educationLevels={EDUCATION_LEVELS}
+              activeDocChapter={activeDocChapter}
+              marginPaddingClass={marginPaddingClass}
+              a4PaperStyle={a4PaperStyle}
+              isExportingDocx={isExportingDocx}
+              onChange={setDraftMateri}
+              onSave={handleSaveEdit}
+              onSaveAndDownload={handleDownloadWord}
+              onCancel={handleCancelEdit}
+              onResetDraft={handleResetDraft}
+            />
+          ) : (
           <article
             style={a4PaperStyle}
             className={`a4-print-sheet bg-white border border-slate-300 shadow-sm rounded-sm mx-auto w-full max-w-[850px] text-slate-900 ${marginPaddingClass}`}
@@ -1757,6 +1868,7 @@ export default function App() {
               </footer>
             )}
           </article>
+          )}
 
           {/* Bottom Export Callout Strip */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 no-print">
